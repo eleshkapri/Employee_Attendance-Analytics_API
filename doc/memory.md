@@ -79,7 +79,12 @@
   - `DATA_MODEL.md`
   - `extracted_problem_statement.txt`
 - Removed compiled `__pycache__` directories.
+- Moved planning documents and context into dedicated `doc/` directory.
 - Re-tested entire endpoint suite; verified 100% passing tests.
+
+### Git Version Control Milestones
+- **Commit 1 (`e591419`)**: `chore(phase-1): initialize repository structure, candidate kit, and project specifications`
+- **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
 
 ---
 
