@@ -107,21 +107,40 @@
 - **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
 - **Commit 3 (`503e340`)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
 
+### Phase 4: Workforce Analytics Aggregation Pipelines (Done)
+- Implemented `GET /analytics/employees/{emp_code}/monthly`:
+  - Working days dynamically computed starting from `joined_on` for mid-month joiners (R7).
+  - Pure aggregation on `attendance_logs` calculating `present_days` (Mon–Fri only, half-day = 0.5), `leave_days`, `late_count`, totals, and `attendance_pct` (R8 rounding).
+- Implemented `GET /analytics/departments/summary`:
+  - Cross-collection aggregation (`employees` $\bowtie$ `attendance_logs`).
+  - Active headcount accurately includes employees with 0 attendance logs (R9).
+  - `avg_work_hours` computed strictly over records (not mean of employee averages).
+- Implemented `GET /analytics/leaderboard/late`:
+  - Standard competition ranking (1, 2, 2, 4) using MongoDB window function `$setWindowFields` with `$rank`.
+  - Limit applied after ranking, preserving all ties at boundary cutoff.
+- Implemented `GET /analytics/departments/{department}/trend`:
+  - Gap-filling calendar days using native MongoDB `$densify` with bounds across full date range.
+  - Per-day headcount via `$lookup` on `joined_on <= date`.
+  - Attendance rate on working days with headcount > 0 (4 decimals half-up); null on weekends.
+  - 7-day moving average over non-null rates using `$setWindowFields`.
+- Automated Test Suite executed (`scratch/test_phase4.py`):
+  - Passed all 4 analytics aggregations, validations, and edge cases against MongoDB Atlas.
+
+### Git Version Control Milestones
+- **Commit 1 (`e591419`)**: `chore(phase-1): initialize repository structure, candidate kit, and project specifications`
+- **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
+- **Commit 3 (`503e340`)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
+- **Commit 4 (Upcoming)**: `feat(phase-4): implement workforce analytics aggregation pipelines`
+
 ---
 
-## 4. Next Milestone: Phase 4 (Workforce Analytics Aggregation Pipelines)
+## 4. Next Milestone: Phase 5 (Part C - Startup Indexes & Explain Endpoint)
 
-- Target Endpoints (Pure MongoDB Aggregations):
-  1. `GET /analytics/employees/{emp_code}/monthly`:
-     - Aggregation on `attendance_logs` matching employee and month.
-     - Working days (Mon–Fri from `joined_on`), `present_days` (0.5 for half-day, Mon–Fri only), `leave_days`, `late_count`, totals, and `attendance_pct`.
-  2. `GET /analytics/departments/summary`:
-     - Cross-collection aggregation (`employees` $\bowtie$ `attendance_logs`).
-     - Includes employees with 0 logs in active `headcount` (R9).
-     - Computes `avg_work_hours` across present records (mean of records, not mean of employee averages).
-  3. `GET /analytics/leaderboard/late`:
-     - Standard competition ranking (1, 2, 2, 4) via `$setWindowFields` / `$rank`.
-     - Applies `limit` after ranking to preserve cutoff ties.
-  4. `GET /analytics/departments/{department}/trend`:
-     - Gap filling across full range using `$densify`.
-     - 7-day moving average calculation via `$setWindowFields`.
+- Target Endpoints & Tasks:
+  1. `GET /admin/explain/{endpoint}`:
+     - Supports `attendance_list`, `employee_monthly`, `department_summary`, `late_leaderboard`, `department_trend`.
+     - Executes `.explain("executionStats")` on the exact pipeline/query.
+     - Formats and returns `{endpoint, collection, explain}`.
+     - Validates required query parameters (returns 422 if missing).
+  2. Index Verification:
+     - Verify execution plan contains `IXSCAN` and zero `COLLSCAN`.
