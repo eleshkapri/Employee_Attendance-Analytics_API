@@ -103,7 +103,7 @@
 ### Git Version Control Milestones
 - **Commit 1 (`e591419`)**: `chore(phase-1): initialize repository structure, candidate kit, and project specifications`
 - **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
-- **Commit 3 (Upcoming)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
+- **Commit 3 (`503e340`)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
 
 ---
 
