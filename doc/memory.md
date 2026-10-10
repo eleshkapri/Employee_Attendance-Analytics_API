@@ -132,7 +132,7 @@
 - **Commit 3 (`503e340`)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
 - **Commit 4 (`21c11da`)**: `feat(phase-4): implement workforce analytics aggregation pipelines`
 - **Commit 5 (`20d8ab8`)**: `feat(phase-5): implement startup indexes and admin explain endpoint with zero COLLSCAN (Part C)`
-- **Commit 6 (Upcoming)**: `docs(phase-6): complete architectural decisions and polish setup documentation (Part C)`
+- **Commit 6 (`e9540f4`)**: `docs(phase-6): complete architectural decisions and polish setup documentation (Part C)`
 
 ---
 
