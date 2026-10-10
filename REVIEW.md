@@ -1,0 +1,38 @@
+# REVIEW.md
+
+## Part A: Codebase Audit & Defect Catalog
+
+This document lists every defect identified in the starter implementation of `app/main.py` (helpers, models, and endpoints), along with failing reproduction scenarios and resolutions.
+
+---
+
+### Defect Catalog
+
+| # | Where (function / line) | What is wrong | How you'd notice it (test, input, or symptom) | How you fixed it |
+|---|---|---|---|---|
+| **1** | `health()` (line 73) | Returns static `{"status": "ok"}` with HTTP 200 without verifying database availability. | When MongoDB Atlas is unreachable or down, `/health` still reports 200 OK. Grader health check times out or fails readiness probe. | Added database ping check `client.admin.command("ping")`. If ping fails or raises an exception, return HTTP 503 Service Unavailable with descriptive detail. |
+| **2** | `create_employee()` (lines 78–85) | Performs an application-level `find_one()` check before `insert_one()`. Vulnerable to Time-of-Check to Time-of-Use (TOCTOU) race conditions under concurrency. | Sending two simultaneous `POST /employees` requests with identical `emp_code` (e.g. `EMP0099`) results in both requests inserting duplicate records. | Created a unique index on `employees.emp_code` at startup. Wrapped insertion in a try-except block catching `pymongo.errors.DuplicateKeyError` and returning HTTP 409 Conflict. |
+| **3** | `EmployeeIn` model (lines 53–61) | Missing input validation for `emp_code` format, email pattern, string length bounds, and equal shift times constraint. | Sending `emp_code="invalid"`, `email="noatsign"`, or `shift_start="09:30"` and `shift_end="09:30"` was accepted with 201 Created instead of returning HTTP 422. | Upgraded to `EmployeeCreate` model with regex `^EMP\d{4,6}$`, email regex, string length bounds, and a Pydantic `@field_validator` ensuring `shift_start != shift_end`. |
+| **4** | `list_employees()` (line 93) | Pagination skip is calculated as `skip = page * page_size`. For page 1, `skip = 1 * 20 = 20`, completely skipping the first page of results! | Requesting `GET /employees?page=1&page_size=20` returns items 21–40 instead of items 1–20. Page 1 returns empty or wrong employees. | Corrected skip formula to 1-indexed pagination: `skip = (page - 1) * page_size`. |
+| **5** | `list_employees()` (lines 94–95) | Document count uses `db.employees.count_documents({})` which ignores the `department` filter. Query also lacks sorting. | Requesting `GET /employees?department=Engineering` on a database with 10 total employees and 2 Engineering employees returns `total: 10` instead of `total: 2`, and results are unsorted. | Updated total calculation to `count_documents(q)` using the active filter query, and added deterministic sorting `.sort("emp_code", 1)` per contract. |
+| **6** | `compute_late_minutes()` (lines 33–37) | (a) Subtraction between naive `datetime.replace()` and timezone-aware timestamps causes crashes or erroneous offsets. (b) Grace period evaluates `minutes > 10` rather than strictly $> 10:00$ elapsed seconds. (c) Fails on overnight shifts. | For a 09:30 shift, punch-in at `09:40:01` has `minutes = 10` which evaluates `10 > 10` as False, incorrectly returning 0 instead of 10. Also crashes on overnight shifts. | Built IST-aware converter with millisecond truncation. Evaluated `diff_seconds > 600`; when True, returned `math.floor(diff_seconds / 60)`, matching R2 exact test vectors (09:40:00 $\rightarrow$ 0, 09:40:01 $\rightarrow$ 10, 10:15:59 $\rightarrow$ 45). |
+| **7** | `compute_work_hours()` (lines 40–41) | Uses Python built-in `round((punch_out - punch_in) / 3600, 2)`. Python `round()` implements Banker's rounding (round-half-to-even) rather than standard Half-Up rounding. | An elapsed duration of 9,018 seconds ($2.505$ hours) rounds to `2.5` instead of `2.51`, violating Rule R4. | Implemented `decimal.Decimal` with explicit `ROUND_HALF_UP` policy: `Decimal(diff_sec) / Decimal(3600)` quantized to `0.01`. |
+| **8** | `compute_overtime()` (lines 44–47) | (a) Fails to enforce the minimum 30-minute threshold. (b) Uses naive `datetime.fromisoformat()` and ignores that overnight shifts end on the next calendar day. | For an 18:30 shift end, punch-out at `18:45` returns 15 minutes of overtime (should be 0 because $< 30$ mins). For overnight shift (22:00–06:00), shift end date was set to punch date instead of next day. | Handled overnight shift end date rollover (`att_date + 1 day`). Calculated floor minutes from shift end and returned `minutes if minutes >= 30 else 0` per Rule R3. |
+| **9** | `punch_in()` (line 101) | Does not check if `db.employees.find_one(...)` returned `None`. Directly accessing `emp["shift_start"]` raises an unhandled Python `TypeError`. | Punching in with an uncreated employee code (e.g. `EMP9999`) results in an internal server error (HTTP 500) instead of HTTP 404 Not Found. | Added verification: if `emp is None`, raise `HTTPException(404, "Employee not found")`. |
+| **10** | `punch_in()` (lines 104–105) | Check-then-insert race condition on `db.attendance_logs.find_one({"emp_code": ..., "date": ...})`. Also leaks MongoDB `id: str(res.inserted_id)`. | Simultaneous concurrent punch-in requests for the same employee on the same date both succeed. Also response returns unexpected `id` property (contract states attendance records have no id; addressed by `emp_code, date`). | Created unique compound index on `attendance_logs(emp_code, date)` and caught `DuplicateKeyError` $\rightarrow$ HTTP 409. Omitted `_id` and removed `id` assignment from response. |
+| **11** | `punch_in()` (lines 63–67, 102) | Accepts arbitrary unvalidated `body.status` (such as `ABSENT` or `LEAVE`) and converts `body.punched_at` without validating epoch millisecond constraints ($10^{11} \le \text{ms} \le 4.1 \times 10^{12}$). | Sending `status="ABSENT"` or a seconds timestamp `punched_at=1783310400` was allowed with 201 Created instead of returning HTTP 422. | Restricted status to `^(PRESENT\|WFH\|ON_DUTY)$` and enforced `ge=100000000000, le=4102444800000` on `punched_at`. |
+| **12** | `list_attendance()` (lines 144–147) | Executes `docs = list(db.attendance_logs.find(q))` and sorts in Python memory using `docs.sort(...)`, then slices in memory. | Under a production or grading dataset with 100,000+ attendance documents, this exhausts container RAM and causes request timeout/crash. | Replaced in-memory slicing with indexed MongoDB cursor streaming: `db.attendance_logs.find(q).sort([("date", -1), ("emp_code", 1)]).skip(skip).limit(page_size)` backed by compound index `{"date": -1, "emp_code": 1}`. Also added HTTP 422 check for `date_from > date_to`. |
+
+---
+
+### Non-Defects Examined & Verified
+
+1. **`IST = timezone(timedelta(hours=5, minutes=30))` Definition**:
+   - Examined whether using standard `datetime.timezone` instead of third-party `pytz` or `zoneinfo` causes DST drift.
+   - Conclusion: **Not a defect**. Indian Standard Time (IST) has no daylight saving time transitions and is fixed permanently at UTC+05:30. Fixed-offset timezone is standard and dependency-free.
+2. **`created_at` Server Clock Assignment**:
+   - Examined whether `created_at` should accept a client-provided timestamp.
+   - Conclusion: **Not a defect**. Contract explicitly specifies that `created_at` is set by the server clock upon employee creation and must never be supplied by a client.
+3. **Absence of `_id` in API Contract**:
+   - Examined why MongoDB `_id` is omitted from schemas.
+   - Conclusion: **Intentional design**. The contract v2.0 explicitly designates `emp_code` as the natural immutable identity for employees, and `(emp_code, date)` as the natural composite key for attendance records. `_id` is internal only.
