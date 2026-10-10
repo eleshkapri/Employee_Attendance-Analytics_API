@@ -6,14 +6,17 @@ Evaluation: HROne Software Engineer Hiring Assignment
 Run: uvicorn app.main:app --port 8000
 Env: MONGO_URI, MONGO_DB (real environment variables take priority over local .env)
 """
+import json
 import math
 import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from bson import json_util
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -39,6 +42,7 @@ def create_indexes():
         # employees collection indexes
         db.employees.create_index([("emp_code", 1)], unique=True)
         db.employees.create_index([("department", 1), ("joined_on", 1)])
+        db.employees.create_index([("joined_on", 1)])
 
         # attendance_logs collection indexes
         db.attendance_logs.create_index([("emp_code", 1), ("date", 1)], unique=True)
@@ -343,6 +347,27 @@ def punch_in(body: PunchInRequest):
     return format_attendance_doc(doc)
 
 
+def build_attendance_query(
+    emp_code: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    status_filter: Optional[str] = None
+) -> Dict[str, Any]:
+    """Build query filter for attendance records list and explain."""
+    q: Dict[str, Any] = {}
+    if emp_code:
+        q["emp_code"] = emp_code
+    if date_from or date_to:
+        q["date"] = {}
+        if date_from:
+            q["date"]["$gte"] = date_from
+        if date_to:
+            q["date"]["$lte"] = date_to
+    if status_filter:
+        q["status"] = status_filter
+    return q
+
+
 @app.get("/attendance", summary="List attendance records")
 def list_attendance(
     emp_code: Optional[str] = None,
@@ -359,17 +384,7 @@ def list_attendance(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date_from must not be after date_to")
 
-    q: Dict[str, Any] = {}
-    if emp_code:
-        q["emp_code"] = emp_code
-    if date_from or date_to:
-        q["date"] = {}
-        if date_from:
-            q["date"]["$gte"] = date_from
-        if date_to:
-            q["date"]["$lte"] = date_to
-    if status_filter:
-        q["status"] = status_filter
+    q = build_attendance_query(emp_code, date_from, date_to, status_filter)
 
     total = db.attendance_logs.count_documents(q)
     skip = (page - 1) * page_size
@@ -652,22 +667,9 @@ def count_working_days(joined_on_str: str, month_str: str) -> int:
     return count
 
 
-@app.get("/analytics/employees/{emp_code}/monthly", summary="Monthly attendance summary for one employee")
-def employee_monthly(emp_code: str, month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
-    """
-    Monthly attendance summary for one employee via MongoDB aggregation.
-    working_days per R7. present_days per R5-R7 (half day = 0.5, Mon-Fri only).
-    leave_days = LEAVE records. late_count = late_minutes > 0 records.
-    attendance_pct = present_days / working_days * 100 (R8 rounding), or null when working_days is 0.
-    404 for unknown employee.
-    """
-    emp = db.employees.find_one({"emp_code": emp_code})
-    if not emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
-
-    working_days = count_working_days(emp["joined_on"], month)
-
-    pipeline = [
+def build_employee_monthly_pipeline(emp_code: str, month: str) -> List[Dict[str, Any]]:
+    """Build aggregation pipeline for single-employee monthly summary."""
+    return [
         {
             "$match": {
                 "emp_code": emp_code,
@@ -714,6 +716,23 @@ def employee_monthly(emp_code: str, month: str = Query(..., pattern=r"^\d{4}-(0[
         }
     ]
 
+
+@app.get("/analytics/employees/{emp_code}/monthly", summary="Monthly attendance summary for one employee")
+def employee_monthly(emp_code: str, month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    """
+    Monthly attendance summary for one employee via MongoDB aggregation.
+    working_days per R7. present_days per R5-R7 (half day = 0.5, Mon-Fri only).
+    leave_days = LEAVE records. late_count = late_minutes > 0 records.
+    attendance_pct = present_days / working_days * 100 (R8 rounding), or null when working_days is 0.
+    404 for unknown employee.
+    """
+    emp = db.employees.find_one({"emp_code": emp_code})
+    if not emp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    working_days = count_working_days(emp["joined_on"], month)
+    pipeline = build_employee_monthly_pipeline(emp_code, month)
+
     res = list(db.attendance_logs.aggregate(pipeline))
     if res:
         agg = res[0]
@@ -748,18 +767,8 @@ def employee_monthly(emp_code: str, month: str = Query(..., pattern=r"^\d{4}-(0[
     }
 
 
-@app.get("/analytics/departments/summary", summary="Department summary for a month")
-def department_summary(
-    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
-    department: Optional[str] = None
-):
-    """
-    Department summary for a month via MongoDB aggregation across both collections.
-    Headcount per R9 - people with zero logs still count, people who join later do not.
-    avg_work_hours is mean over records that are present status and have work_hours value.
-    Omit departments with headcount 0.
-    Sorted by department ascending.
-    """
+def build_department_summary_pipeline(month: str, department: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Build aggregation pipeline for department summary across both collections."""
     y, m = map(int, month.split("-"))
     if m == 12:
         next_month = date(y + 1, 1, 1)
@@ -771,7 +780,7 @@ def department_summary(
     if department:
         match_stage["department"] = department
 
-    pipeline = [
+    return [
         {"$match": match_stage},
         {
             "$lookup": {
@@ -874,6 +883,20 @@ def department_summary(
         {"$sort": {"department": 1}}
     ]
 
+
+@app.get("/analytics/departments/summary", summary="Department summary for a month")
+def department_summary(
+    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    department: Optional[str] = None
+):
+    """
+    Department summary for a month via MongoDB aggregation across both collections.
+    Headcount per R9 - people with zero logs still count, people who join later do not.
+    avg_work_hours is mean over records that are present status and have work_hours value.
+    Omit departments with headcount 0.
+    Sorted by department ascending.
+    """
+    pipeline = build_department_summary_pipeline(month, department)
     results = list(db.employees.aggregate(pipeline))
     items = []
     for r in results:
@@ -891,16 +914,8 @@ def department_summary(
     return {"month": month, "items": items}
 
 
-@app.get("/analytics/leaderboard/late", summary="Late-comers leaderboard for a month")
-def late_leaderboard(
-    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
-    limit: int = Query(default=10, ge=1, le=50),
-    department: Optional[str] = None,
-):
-    """
-    Late-comers ranking with standard competition ranking (1, 2, 2, 4).
-    limit applied after ranking. Tied rows ordered by emp_code ascending.
-    """
+def build_late_leaderboard_pipeline(month: str, limit: int, department: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Build aggregation pipeline for late leaderboard with standard competition ranking."""
     pipeline = [
         {
             "$match": {
@@ -959,7 +974,20 @@ def late_leaderboard(
             }
         }
     ])
+    return pipeline
 
+
+@app.get("/analytics/leaderboard/late", summary="Late-comers leaderboard for a month")
+def late_leaderboard(
+    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    limit: int = Query(default=10, ge=1, le=50),
+    department: Optional[str] = None,
+):
+    """
+    Late-comers ranking with standard competition ranking (1, 2, 2, 4).
+    limit applied after ranking. Tied rows ordered by emp_code ascending.
+    """
+    pipeline = build_late_leaderboard_pipeline(month, limit, department)
     results = list(db.attendance_logs.aggregate(pipeline))
     items = []
     for r in results:
@@ -975,40 +1003,19 @@ def late_leaderboard(
     return {"month": month, "items": items}
 
 
-@app.get("/analytics/departments/{department}/trend", summary="Daily attendance trend for a department")
-def department_trend(
-    department: str,
-    from_date: str = Query(..., alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    to_date: str = Query(..., alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$")
-):
-    """
-    Daily attendance trend for a department.
-    Returns exactly one row per calendar day from from to to inclusive via $densify.
-    is_working_day = Mon-Fri.
-    headcount = department employees with joined_on <= that day (R9).
-    attendance_rate = present_count / headcount (4 decimals half-up), only on working days with headcount > 0.
-    moving_avg_7d = mean of non-null attendance_rate among current row and up to 6 preceding rows in requested range.
-    404 unknown department; 422 if to < from or range exceeds 92 days.
-    """
-    if to_date < from_date:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="to date must not be before from date")
-
-    d_from = date.fromisoformat(from_date)
+def build_department_trend_pipeline(department: str, from_date: str, to_date: str) -> List[Dict[str, Any]]:
+    """Build aggregation pipeline for daily attendance trend with calendar densification."""
     d_to = date.fromisoformat(to_date)
-    day_count = (d_to - d_from).days + 1
-    if day_count > 92:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date range must not exceed 92 days")
-
-    # Check if department exists
-    dept_emp = db.employees.find_one({"department": department})
-    if not dept_emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
-
     from_dt = datetime.fromisoformat(f"{from_date}T00:00:00Z")
     to_plus_one = (d_to + timedelta(days=1)).isoformat()
     to_bound = datetime.fromisoformat(f"{to_plus_one}T00:00:00Z")
 
-    pipeline = [
+    return [
+        {
+            "$match": {
+                "date": {"$gte": from_date, "$lte": to_date}
+            }
+        },
         {
             "$lookup": {
                 "from": "employees",
@@ -1020,8 +1027,7 @@ def department_trend(
         {"$unwind": "$emp"},
         {
             "$match": {
-                "emp.department": department,
-                "date": {"$gte": from_date, "$lte": to_date}
+                "emp.department": department
             }
         },
         {
@@ -1136,6 +1142,37 @@ def department_trend(
         }
     ]
 
+
+@app.get("/analytics/departments/{department}/trend", summary="Daily attendance trend for a department")
+def department_trend(
+    department: str,
+    from_date: str = Query(..., alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    to_date: str = Query(..., alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$")
+):
+    """
+    Daily attendance trend for a department.
+    Returns exactly one row per calendar day from from to to inclusive via $densify.
+    is_working_day = Mon-Fri.
+    headcount = department employees with joined_on <= that day (R9).
+    attendance_rate = present_count / headcount (4 decimals half-up), only on working days with headcount > 0.
+    moving_avg_7d = mean of non-null attendance_rate among current row and up to 6 preceding rows in requested range.
+    404 unknown department; 422 if to < from or range exceeds 92 days.
+    """
+    if to_date < from_date:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="to date must not be before from date")
+
+    d_from = date.fromisoformat(from_date)
+    d_to = date.fromisoformat(to_date)
+    day_count = (d_to - d_from).days + 1
+    if day_count > 92:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date range must not exceed 92 days")
+
+    # Check if department exists
+    dept_emp = db.employees.find_one({"department": department})
+    if not dept_emp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+    pipeline = build_department_trend_pipeline(department, from_date, to_date)
     results = list(db.attendance_logs.aggregate(pipeline))
     items = []
     for r in results:
@@ -1152,6 +1189,125 @@ def department_trend(
     return {"department": department, "items": items}
 
 
-@app.get("/admin/explain/{endpoint}")
-def explain_endpoint(endpoint: str):
-    raise HTTPException(status_code=501, detail="To be completed in Phase 5")
+class ExplainEndpointEnum(str, Enum):
+    attendance_list = "attendance_list"
+    employee_monthly = "employee_monthly"
+    department_summary = "department_summary"
+    late_leaderboard = "late_leaderboard"
+    department_trend = "department_trend"
+
+
+@app.get("/admin/explain/{endpoint}", summary="MongoDB explain for an endpoint's main query")
+def explain_endpoint(
+    endpoint: ExplainEndpointEnum,
+    emp_code: Optional[str] = None,
+    month: Optional[str] = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    department: Optional[str] = None,
+    limit: Optional[int] = Query(default=10, ge=1, le=50),
+    date_from: Optional[str] = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: Optional[str] = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    status_filter: Optional[str] = Query(default=None, alias="status", pattern=r"^(PRESENT|ABSENT|LEAVE|WFH|ON_DUTY)$"),
+    from_date: Optional[str] = Query(default=None, alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    to_date: Optional[str] = Query(default=None, alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    page: Optional[int] = Query(default=1, ge=1),
+    page_size: Optional[int] = Query(default=20, ge=1, le=100),
+):
+    """
+    Runs explain with executionStats verbosity for the main query or aggregation of the named endpoint,
+    built exactly as that endpoint builds it (same filters, sort, pagination), and returns raw explain output.
+    Accepts the same query parameters as the endpoint it explains. Missing required parameters -> 422.
+    """
+    ep = endpoint.value
+
+    if ep == "attendance_list":
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date_from must not be after date_to")
+        q = build_attendance_query(emp_code, date_from, date_to, status_filter)
+        p = page if page is not None else 1
+        ps = page_size if page_size is not None else 20
+        skip = (p - 1) * ps
+        cursor = db.attendance_logs.find(q).sort([("date", -1), ("emp_code", 1)]).skip(skip).limit(ps)
+        raw_explain = cursor.explain()
+        explain_json = json.loads(json_util.dumps(raw_explain))
+        return {
+            "endpoint": ep,
+            "collection": "attendance_logs",
+            "explain": explain_json
+        }
+
+    elif ep == "employee_monthly":
+        if not emp_code:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="emp_code is required for employee_monthly")
+        if not month:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="month is required for employee_monthly")
+        pipeline = build_employee_monthly_pipeline(emp_code, month)
+        raw_explain = db.command(
+            "explain",
+            {"aggregate": "attendance_logs", "pipeline": pipeline, "cursor": {}},
+            verbosity="executionStats"
+        )
+        explain_json = json.loads(json_util.dumps(raw_explain))
+        return {
+            "endpoint": ep,
+            "collection": "attendance_logs",
+            "explain": explain_json
+        }
+
+    elif ep == "department_summary":
+        if not month:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="month is required for department_summary")
+        pipeline = build_department_summary_pipeline(month, department)
+        raw_explain = db.command(
+            "explain",
+            {"aggregate": "employees", "pipeline": pipeline, "cursor": {}},
+            verbosity="executionStats"
+        )
+        explain_json = json.loads(json_util.dumps(raw_explain))
+        return {
+            "endpoint": ep,
+            "collection": "employees",
+            "explain": explain_json
+        }
+
+    elif ep == "late_leaderboard":
+        if not month:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="month is required for late_leaderboard")
+        lim = limit if limit is not None else 10
+        pipeline = build_late_leaderboard_pipeline(month, lim, department)
+        raw_explain = db.command(
+            "explain",
+            {"aggregate": "attendance_logs", "pipeline": pipeline, "cursor": {}},
+            verbosity="executionStats"
+        )
+        explain_json = json.loads(json_util.dumps(raw_explain))
+        return {
+            "endpoint": ep,
+            "collection": "attendance_logs",
+            "explain": explain_json
+        }
+
+    elif ep == "department_trend":
+        if not department:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="department is required for department_trend")
+        if not from_date:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="from is required for department_trend")
+        if not to_date:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="to is required for department_trend")
+        if to_date < from_date:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="to date must not be before from date")
+        d_from = date.fromisoformat(from_date)
+        d_to = date.fromisoformat(to_date)
+        if (d_to - d_from).days + 1 > 92:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date range must not exceed 92 days")
+        pipeline = build_department_trend_pipeline(department, from_date, to_date)
+        raw_explain = db.command(
+            "explain",
+            {"aggregate": "attendance_logs", "pipeline": pipeline, "cursor": {}},
+            verbosity="executionStats"
+        )
+        explain_json = json.loads(json_util.dumps(raw_explain))
+        return {
+            "endpoint": ep,
+            "collection": "attendance_logs",
+            "explain": explain_json
+        }

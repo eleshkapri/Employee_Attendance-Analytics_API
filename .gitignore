@@ -37,6 +37,7 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+scratch/
 
 # OS
 .DS_Store

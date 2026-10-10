@@ -130,17 +130,50 @@
 - **Commit 1 (`e591419`)**: `chore(phase-1): initialize repository structure, candidate kit, and project specifications`
 - **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
 - **Commit 3 (`503e340`)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
-- **Commit 4 (Upcoming)**: `feat(phase-4): implement workforce analytics aggregation pipelines`
+- **Commit 4 (`21c11da`)**: `feat(phase-4): implement workforce analytics aggregation pipelines`
 
 ---
 
-## 4. Next Milestone: Phase 5 (Part C - Startup Indexes & Explain Endpoint)
+### Phase 5: Startup Indexes & Explain Endpoint (Part C, Done)
+- Startup Idempotent Indexes in `app/main.py`:
+  - `employees`:
+    - `{"emp_code": 1}` (unique): Guarantees uniqueness; accelerates `$lookup` target foreign key scans.
+    - `{"department": 1, "joined_on": 1}`: Backs department filtering and headcount evaluation.
+    - `{"joined_on": 1}`: Eliminates `COLLSCAN` during multi-department monthly summaries.
+  - `attendance_logs`:
+    - `{"emp_code": 1, "date": 1}` (unique): Guarantees single punch-in per day; race safety; point lookups for regularization; `$lookup` foreign join.
+    - `{"date": -1, "emp_code": 1}`: Backs default pagination sort, date range scans, and leaderboard pipeline.
+    - `{"emp_code": 1, "date": 1, "status": 1}`: Compound index for monthly employee aggregations.
+    - `{"status": 1, "date": 1, "late_minutes": 1}`: Compound index for late minutes aggregation and department metrics.
+- Implemented `GET /admin/explain/{endpoint}`:
+  - Supported endpoints: `attendance_list`, `employee_monthly`, `department_summary`, `late_leaderboard`, `department_trend`.
+  - Built matching pipelines and queries through shared helper functions: `build_attendance_query`, `build_employee_monthly_pipeline`, `build_department_summary_pipeline`, `build_late_leaderboard_pipeline`, `build_department_trend_pipeline`.
+  - Executes `.explain("executionStats")` and serializes BSON types via `json_util`.
+  - Returns required schema `{endpoint, collection, explain}`.
+  - Strict validation: rejects missing required parameters with HTTP 422.
+- Verified Execution Plans:
+  - All 5 endpoints show `IXSCAN` / index seeks.
+  - **Zero `COLLSCAN`s detected across all query variants and aggregations.**
 
-- Target Endpoints & Tasks:
-  1. `GET /admin/explain/{endpoint}`:
-     - Supports `attendance_list`, `employee_monthly`, `department_summary`, `late_leaderboard`, `department_trend`.
-     - Executes `.explain("executionStats")` on the exact pipeline/query.
-     - Formats and returns `{endpoint, collection, explain}`.
-     - Validates required query parameters (returns 422 if missing).
-  2. Index Verification:
-     - Verify execution plan contains `IXSCAN` and zero `COLLSCAN`.
+---
+
+### Phase 6: Documentation & Final Polish (Part C, Done)
+- Filled [DECISIONS.md](file:///d:/HRone%20assigment/DECISIONS.md) with concise, technical answers to the 5 architectural questions (~215 words total):
+  1. Indexes created and why; rejected standalone `late_minutes` index rationale.
+  2. Punch-in race condition mechanics (atomic serialization at storage layer via unique compound index, `DuplicateKeyError` to `409 Conflict`).
+  3. Leaderboard ties at limit cutoff (standard competition ranking `$rank: {}` via `$setWindowFields`, all tied candidates returned, deterministic secondary sort on `emp_code`).
+  4. Department summary headcount counting employees with zero logs (`$lookup` from `employees` with `$unwind: {preserveNullAndEmptyArrays: true}`).
+  5. 100x scale adaptation (pre-aggregating daily rollups via MongoDB change streams to eliminate real-time `$lookup`/`$densify` overhead).
+- Polished [README.md](file:///d:/HRone%20assigment/README.md) with concise setup, environment variable configuration, seed command, run command, and endpoint directory.
+- End-to-End Regression Suite (`scratch/test_complete_suite.py`):
+  - Passed 100% across all 12 system, employee, attendance, analytics, and admin explain endpoints.
+
+---
+
+### Final Project Status
+- **Part A (10%)**: Starter Audit & `REVIEW.md` (12 defects cataloged and resolved).
+- **Part B (30%)**: Rules R1–R5, Punch-Out, Regularization CRUD with optimistic concurrency & audit trail.
+- **Part B (30%)**: 4 Workforce Analytics MongoDB Aggregations (`employee_monthly`, `department_summary`, `late_leaderboard`, `department_trend`).
+- **Part C (15%)**: Startup Indexes & `GET /admin/explain/{endpoint}` with zero `COLLSCAN`.
+- **Part C (15%)**: `DECISIONS.md` architectural rationale & code quality.
+- **Deliverables**: Single application file `app/main.py`, `REVIEW.md`, `DECISIONS.md`, `README.md`, `requirements.txt`, clean `.gitignore`.
