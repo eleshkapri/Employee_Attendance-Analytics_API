@@ -82,23 +82,44 @@
 - Moved planning documents and context into dedicated `doc/` directory.
 - Re-tested entire endpoint suite; verified 100% passing tests.
 
+### Phase 3: Core CRUD & Regularization (Done)
+- Implemented `POST /attendance/punch-out`:
+  - Locates latest open attendance record (`punch_in <= punched_at`).
+  - Race-safe atomic update via `find_one_and_update({"punch_out": None})` ensuring concurrent attempts produce exactly one 200 and subsequent 409.
+  - Enforces 24-hour boundary and `punched_at > punch_in` (422).
+  - Dynamically computes `work_hours` (Decimal half-up R4), `overtime_minutes` (R3), and `half_day` (R5).
+- Implemented `PATCH /attendance/{emp_code}/{date}` (Regularization):
+  - Natural key addressing `(emp_code, date)`.
+  - Comprehensive status validation: clearing punches on `ABSENT`/`LEAVE`, requiring `punch_in` for presence statuses.
+  - Enforces `punch_in` remains anchored to the attendance date (R1).
+  - Enforces positive intervals and $\le 24$h window.
+  - Recomputes all derived fields (`late_minutes`, `work_hours`, `overtime_minutes`, `half_day`).
+  - Appends immutable audit entry to `history` array with `{at, by, reason, changes: {field: {from, to}}}`.
+  - Optimistic locking protects against concurrent history clobbering.
+- Automated Test Suite executed (`scratch/test_phase3.py`):
+  - Passed all punch-out validation, calculation, and concurrency tests.
+  - Passed all regularization boundary, audit formatting, and derived field tests.
+
 ### Git Version Control Milestones
 - **Commit 1 (`e591419`)**: `chore(phase-1): initialize repository structure, candidate kit, and project specifications`
 - **Commit 2 (`9fb6e70`)**: `feat(phase-2): resolve starter defects, implement rules R1-R5 engine, and complete review catalog (Part A)`
+- **Commit 3 (Upcoming)**: `feat(phase-3): implement punch-out and regularization CRUD with audit logging`
 
 ---
 
-## 4. Next Milestone: Phase 3 (Core CRUD & Regularization)
+## 4. Next Milestone: Phase 4 (Workforce Analytics Aggregation Pipelines)
 
-- Target Endpoints:
-  1. `POST /attendance/punch-out`:
-     - Atomic `find_one_and_update` on latest open record (`punch_in <= punched_at` and `punch_out == None`).
-     - Validate 24-hour limit and `punched_at > punch_in` (422).
-     - Compute `work_hours`, `overtime_minutes`, `half_day`.
-     - Return updated record matching schema.
-  2. `PATCH /attendance/{emp_code}/{date}` (Regularization):
-     - Address by natural key `(emp_code, date)`.
-     - Status transition validation (clearing punch times on `ABSENT`/`LEAVE`, presence requires `punch_in`).
-     - Enforce `punch_in` stays on record's attendance date.
-     - Recompute derived fields.
-     - Append immutable audit log to `history` array with `{at, by, reason, changes}`.
+- Target Endpoints (Pure MongoDB Aggregations):
+  1. `GET /analytics/employees/{emp_code}/monthly`:
+     - Aggregation on `attendance_logs` matching employee and month.
+     - Working days (Mon–Fri from `joined_on`), `present_days` (0.5 for half-day, Mon–Fri only), `leave_days`, `late_count`, totals, and `attendance_pct`.
+  2. `GET /analytics/departments/summary`:
+     - Cross-collection aggregation (`employees` $\bowtie$ `attendance_logs`).
+     - Includes employees with 0 logs in active `headcount` (R9).
+     - Computes `avg_work_hours` across present records (mean of records, not mean of employee averages).
+  3. `GET /analytics/leaderboard/late`:
+     - Standard competition ranking (1, 2, 2, 4) via `$setWindowFields` / `$rank`.
+     - Applies `limit` after ranking to preserve cutoff ties.
+  4. `GET /analytics/departments/{department}/trend`:
+     - Gap filling across full range using `$densify`.
+     - 7-day moving average calculation via `$setWindowFields`.

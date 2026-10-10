@@ -382,14 +382,239 @@ def list_attendance(
 # --------------------------------------------------------------------------- #
 # Remaining Endpoints Placeholders (Part B - To be implemented in Phase 3 & 4)
 # --------------------------------------------------------------------------- #
-@app.post("/attendance/punch-out")
+@app.post("/attendance/punch-out", status_code=status.HTTP_200_OK, summary="Record a punch-out")
 def punch_out(body: PunchOutRequest):
-    raise HTTPException(status_code=501, detail="To be completed in Phase 3")
+    """
+    Closes the employee's most recent record whose punch_in is at or before punched_at
+    (works across midnight for overnight shifts).
+    Computes work_hours (R4), overtime_minutes (R3) and half_day (R5).
+    Errors:
+      404 unknown employee, or no punch-in found;
+      409 that record is already punched out (two simultaneous punch-outs must yield exactly one 200);
+      422 if punched_at <= punch_in or more than 24 hours after it.
+    """
+    emp = db.employees.find_one({"emp_code": body.emp_code})
+    if not emp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    if body.punched_at is not None:
+        punch_out_ms = truncate_ms(body.punched_at)
+    else:
+        punch_out_ms = truncate_ms(int(datetime.now(timezone.utc).timestamp() * 1000))
+
+    punch_out_dt = ms_to_datetime(punch_out_ms)
+
+    record = db.attendance_logs.find_one(
+        {
+            "emp_code": body.emp_code,
+            "punch_in": {"$lte": punch_out_dt, "$ne": None}
+        },
+        sort=[("punch_in", pymongo.DESCENDING)]
+    )
+
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No punch-in found")
+
+    if record.get("punch_out") is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="that record is already punched out")
+
+    punch_in_ms = datetime_to_ms(record["punch_in"])
+    if punch_in_ms is None or punch_out_ms <= punch_in_ms or (punch_out_ms - punch_in_ms) > 86400000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="punched_at must be strictly after punch_in and within 24 hours of it"
+        )
+
+    shift_start = emp.get("shift_start", "09:30")
+    shift_end = emp.get("shift_end", "18:30")
+    att_date = record["date"]
+
+    work_hours = compute_work_hours(punch_in_ms, punch_out_ms)
+    overtime_min = compute_overtime(punch_out_ms, shift_start, shift_end, att_date)
+    half_day = compute_half_day(work_hours)
+
+    updated_doc = db.attendance_logs.find_one_and_update(
+        {
+            "_id": record["_id"],
+            "punch_out": None
+        },
+        {
+            "$set": {
+                "punch_out": punch_out_dt,
+                "work_hours": work_hours,
+                "overtime_minutes": overtime_min,
+                "half_day": half_day
+            }
+        },
+        return_document=pymongo.ReturnDocument.AFTER
+    )
+
+    if not updated_doc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="that record is already punched out")
+
+    return format_attendance_doc(updated_doc)
 
 
-@app.patch("/attendance/{emp_code}/{date}")
+@app.patch("/attendance/{emp_code}/{date}", status_code=status.HTTP_200_OK, summary="Regularize attendance record")
 def regularize_attendance(emp_code: str, date: str, body: RegularizeRequest):
-    raise HTTPException(status_code=501, detail="To be completed in Phase 3")
+    """
+    Regularize (manually correct) one day's record.
+    The record is addressed by its natural key: emp_code and date (YYYY-MM-DD).
+    Omitted fields are unchanged.
+    Recomputes late_minutes, work_hours, overtime_minutes and half_day from final times (R2-R5).
+    Appends one entry to history.
+    """
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid date format, expected YYYY-MM-DD")
+
+    emp = db.employees.find_one({"emp_code": emp_code})
+    if not emp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    record = db.attendance_logs.find_one({"emp_code": emp_code, "date": date})
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance record not found for this date")
+
+    cur_status = record["status"]
+    cur_punch_in = datetime_to_ms(record.get("punch_in"))
+    cur_punch_out = datetime_to_ms(record.get("punch_out"))
+    cur_work_hours = record.get("work_hours")
+    cur_late_minutes = record.get("late_minutes", 0)
+    cur_overtime_minutes = record.get("overtime_minutes", 0)
+    cur_half_day = record.get("half_day", False)
+
+    if body.status in ("ABSENT", "LEAVE"):
+        if body.punch_in is not None or body.punch_out is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Supplying punch_in or punch_out when setting status ABSENT or LEAVE is not allowed"
+            )
+        new_status = body.status
+        new_punch_in = None
+        new_punch_out = None
+    elif body.status is not None:
+        new_status = body.status
+        new_punch_in = truncate_ms(body.punch_in) if body.punch_in is not None else cur_punch_in
+        new_punch_out = truncate_ms(body.punch_out) if body.punch_out is not None else cur_punch_out
+    else:
+        new_status = cur_status
+        new_punch_in = truncate_ms(body.punch_in) if body.punch_in is not None else cur_punch_in
+        new_punch_out = truncate_ms(body.punch_out) if body.punch_out is not None else cur_punch_out
+
+    if new_status in ("ABSENT", "LEAVE"):
+        if body.punch_in is not None or body.punch_out is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Punch times cannot be set for ABSENT or LEAVE status"
+            )
+        new_punch_in = None
+        new_punch_out = None
+    else:
+        if new_punch_in is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A presence status requires a punch_in"
+            )
+
+    shift_start = emp.get("shift_start", "09:30")
+    shift_end = emp.get("shift_end", "18:30")
+
+    if new_punch_in is not None:
+        resolved_date = resolve_attendance_date(new_punch_in, shift_start, shift_end)
+        if resolved_date != date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"punch_in must stay on the record's attendance date ({date}), got {resolved_date}"
+            )
+
+    if new_punch_out is not None:
+        if new_punch_in is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punch_out requires punch_in")
+        if new_punch_out <= new_punch_in:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punch_out must be strictly after punch_in")
+        if (new_punch_out - new_punch_in) > 86400000:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punch_out must be within 24 hours of punch_in")
+
+    if new_status in ("ABSENT", "LEAVE"):
+        new_work_hours = None
+        new_late_minutes = 0
+        new_overtime_minutes = 0
+        new_half_day = False
+    else:
+        new_late_minutes = compute_late_minutes(new_punch_in, shift_start, shift_end, date)
+        if new_punch_out is not None:
+            new_work_hours = compute_work_hours(new_punch_in, new_punch_out)
+            new_overtime_minutes = compute_overtime(new_punch_out, shift_start, shift_end, date)
+            new_half_day = compute_half_day(new_work_hours)
+        else:
+            new_work_hours = None
+            new_overtime_minutes = 0
+            new_half_day = False
+
+    changes: Dict[str, Any] = {}
+    if cur_status != new_status:
+        changes["status"] = {"from": cur_status, "to": new_status}
+    if cur_punch_in != new_punch_in:
+        changes["punch_in"] = {"from": cur_punch_in, "to": new_punch_in}
+    if cur_punch_out != new_punch_out:
+        changes["punch_out"] = {"from": cur_punch_out, "to": new_punch_out}
+    if cur_work_hours != new_work_hours:
+        changes["work_hours"] = {"from": cur_work_hours, "to": new_work_hours}
+    if cur_late_minutes != new_late_minutes:
+        changes["late_minutes"] = {"from": cur_late_minutes, "to": new_late_minutes}
+    if cur_overtime_minutes != new_overtime_minutes:
+        changes["overtime_minutes"] = {"from": cur_overtime_minutes, "to": new_overtime_minutes}
+    if cur_half_day != new_half_day:
+        changes["half_day"] = {"from": cur_half_day, "to": new_half_day}
+
+    if not changes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Request changes nothing")
+
+    mongo_changes: Dict[str, Any] = {}
+    for k, v in changes.items():
+        if k in ("punch_in", "punch_out"):
+            mongo_changes[k] = {
+                "from": ms_to_datetime(v["from"]) if v["from"] is not None else None,
+                "to": ms_to_datetime(v["to"]) if v["to"] is not None else None,
+            }
+        else:
+            mongo_changes[k] = v
+
+    now_ms = truncate_ms(int(datetime.now(timezone.utc).timestamp() * 1000))
+    history_entry = {
+        "at": ms_to_datetime(now_ms),
+        "by": body.regularized_by,
+        "reason": body.reason,
+        "changes": mongo_changes
+    }
+
+    cur_history_len = len(record.get("history", []))
+    updated_doc = db.attendance_logs.find_one_and_update(
+        {
+            "_id": record["_id"],
+            f"history.{cur_history_len}": {"$exists": False}
+        },
+        {
+            "$set": {
+                "status": new_status,
+                "punch_in": ms_to_datetime(new_punch_in) if new_punch_in is not None else None,
+                "punch_out": ms_to_datetime(new_punch_out) if new_punch_out is not None else None,
+                "work_hours": new_work_hours,
+                "late_minutes": new_late_minutes,
+                "overtime_minutes": new_overtime_minutes,
+                "half_day": new_half_day,
+            },
+            "$push": {
+                "history": history_entry
+            }
+        },
+        return_document=pymongo.ReturnDocument.AFTER
+    )
+
+    if not updated_doc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Concurrent regularization conflict")
+
+    return format_attendance_doc(updated_doc)
 
 
 @app.get("/analytics/employees/{emp_code}/monthly")
