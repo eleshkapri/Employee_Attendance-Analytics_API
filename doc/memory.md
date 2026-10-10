@@ -1,8 +1,10 @@
 # Project Technical Memory & State Log
 
+> **PERMANENT OPERATIONAL DIRECTIVE**: This `doc/memory.md` file must be continuously updated at regular intervals across every phase and conversation turn to preserve long-term context, record architectural decisions, log git commits, and prevent AI drift or hallucination.
+
 ## Project: Employee Attendance & Analytics API
-**Current Milestone**: Workspace Cleaned & Verified | Ready for Phase 3 Execution  
-**Last Updated**: 2026-10-10 22:18:00 IST
+**Current Milestone**: Phase 3 Completed & Committed | Beginning Phase 4 (Analytics Pipelines)  
+**Last Updated**: 2026-10-10 22:36:00 IST
 
 ---
 
