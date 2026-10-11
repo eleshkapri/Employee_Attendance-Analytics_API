@@ -178,4 +178,12 @@
 - **Part B (30%)**: 4 Workforce Analytics MongoDB Aggregations (`employee_monthly`, `department_summary`, `late_leaderboard`, `department_trend`).
 - **Part C (15%)**: Startup Indexes & `GET /admin/explain/{endpoint}` with zero `COLLSCAN`.
 - **Part C (15%)**: `DECISIONS.md` architectural rationale & code quality.
+- **Deliverables**: Single application file `app/main.py`, `REVIEW.md`, `DECISIONS.md`, `README.md`, `requirements.txt`, clean `.gitignore`, `doc/postman_collection.json`.
+
+---
+
+### Phase 7: Postman API Testing Suite & Codebase Commentary (Done)
+- Generated ready-to-import Postman Collection v2.1.0 at [`doc/postman_collection.json`](file:///d:/HRone%20assigment/doc/postman_collection.json) covering all 12 API routes.
+- Enhanced inline docstrings, architectural commentary, and clear section dividers throughout `app/main.py`.
+- Re-verified complete test suite with 100% pass rate.
 - **Deliverables**: Single application file `app/main.py`, `REVIEW.md`, `DECISIONS.md`, `README.md`, `requirements.txt`, clean `.gitignore`.

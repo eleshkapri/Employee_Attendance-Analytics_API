@@ -1,0 +1,400 @@
+{
+  "info": {
+    "name": "Employee Attendance & Analytics API (HROne)",
+    "_postman_id": "hr-one-attendance-api-v2",
+    "description": "Complete Postman collection for all 12 endpoints of the Employee Attendance & Analytics API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. System & Health",
+      "item": [
+        {
+          "name": "Health Check (Readiness Probe)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Pings MongoDB Atlas; returns 200 {'status': 'ok'} if connected, 503 if unavailable."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Employee Management",
+      "item": [
+        {
+          "name": "Create Employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emp_code\": \"EMP5001\",\n  \"name\": \"Aarav Sharma\",\n  \"email\": \"aarav.sharma@company.com\",\n  \"department\": \"Engineering\",\n  \"shift_start\": \"09:30\",\n  \"shift_end\": \"18:30\",\n  \"joined_on\": \"2026-06-15\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/employees",
+              "host": ["{{baseUrl}}"],
+              "path": ["employees"]
+            },
+            "description": "Creates a new employee. Enforces unique emp_code constraint (409 on duplicate)."
+          }
+        },
+        {
+          "name": "List Employees",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/employees?page=1&page_size=20&department=Engineering",
+              "host": ["{{baseUrl}}"],
+              "path": ["employees"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                },
+                {
+                  "key": "department",
+                  "value": "Engineering"
+                }
+              ]
+            },
+            "description": "Lists employees sorted by emp_code ascending with 1-based pagination."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Attendance Operations",
+      "item": [
+        {
+          "name": "Punch-In",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emp_code\": \"EMP0001\",\n  \"punched_at\": 1783310400000,\n  \"status\": \"PRESENT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attendance/punch-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance", "punch-in"]
+            },
+            "description": "Records punch-in. Calculates late_minutes with 10m grace period (R2). Prevents duplicate punch-ins per day (409)."
+          }
+        },
+        {
+          "name": "List Attendance Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/attendance?emp_code=EMP0001&page=1&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance"],
+              "query": [
+                {
+                  "key": "emp_code",
+                  "value": "EMP0001"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Lists attendance records sorted by date descending, emp_code ascending."
+          }
+        },
+        {
+          "name": "Punch-Out",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emp_code\": \"EMP0001\",\n  \"punched_at\": 1783344600000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attendance/punch-out",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance", "punch-out"]
+            },
+            "description": "Closes latest open punch-in. Computes work_hours (R4), overtime (R3), and half_day (R5). Race-safe atomic update."
+          }
+        },
+        {
+          "name": "Regularize Attendance (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"punch_in\": 1783310100000,\n  \"reason\": \"Biometric sensor network sync delay\",\n  \"regularized_by\": \"HR Operations\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attendance/EMP0001/2026-07-06",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance", "EMP0001", "2026-07-06"]
+            },
+            "description": "Corrects record by natural key (emp_code, date). Appends immutable audit history log and recomputes metrics."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Workforce Analytics",
+      "item": [
+        {
+          "name": "Employee Monthly Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/employees/EMP0001/monthly?month=2026-07",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "employees", "EMP0001", "monthly"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                }
+              ]
+            },
+            "description": "Computes dynamic working days (R7), present days (half-day = 0.5), leave count, and attendance % with half-up rounding (R8)."
+          }
+        },
+        {
+          "name": "Department Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/departments/summary?month=2026-07&department=Engineering",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "departments", "summary"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                },
+                {
+                  "key": "department",
+                  "value": "Engineering"
+                }
+              ]
+            },
+            "description": "Cross-collection aggregation accurately counting active headcount including employees with 0 logs (R9)."
+          }
+        },
+        {
+          "name": "Late Leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/leaderboard/late?month=2026-07&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "leaderboard", "late"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Ranks late-comers using standard competition ranking ($rank: {} in $setWindowFields), preserving cutoff ties."
+          }
+        },
+        {
+          "name": "Department Trend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/departments/Engineering/trend?from=2026-07-01&to=2026-07-10",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "departments", "Engineering", "trend"],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-07-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-10"
+                }
+              ]
+            },
+            "description": "Daily attendance trend using native MongoDB calendar densification ($densify) and 7-day moving average window."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Admin Performance & Query Explain",
+      "item": [
+        {
+          "name": "Explain: attendance_list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/explain/attendance_list?emp_code=EMP0001",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "explain", "attendance_list"],
+              "query": [
+                {
+                  "key": "emp_code",
+                  "value": "EMP0001"
+                }
+              ]
+            },
+            "description": "Runs executionStats explain proving attendance_list uses IXSCAN and 0 COLLSCAN."
+          }
+        },
+        {
+          "name": "Explain: employee_monthly",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/explain/employee_monthly?emp_code=EMP0001&month=2026-07",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "explain", "employee_monthly"],
+              "query": [
+                {
+                  "key": "emp_code",
+                  "value": "EMP0001"
+                },
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                }
+              ]
+            },
+            "description": "Runs executionStats explain proving employee_monthly uses IXSCAN and 0 COLLSCAN."
+          }
+        },
+        {
+          "name": "Explain: department_summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/explain/department_summary?month=2026-07&department=Engineering",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "explain", "department_summary"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                },
+                {
+                  "key": "department",
+                  "value": "Engineering"
+                }
+              ]
+            },
+            "description": "Runs executionStats explain proving department_summary uses IXSCAN and 0 COLLSCAN."
+          }
+        },
+        {
+          "name": "Explain: late_leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/explain/late_leaderboard?month=2026-07&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "explain", "late_leaderboard"],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-07"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Runs executionStats explain proving late_leaderboard uses IXSCAN and 0 COLLSCAN."
+          }
+        },
+        {
+          "name": "Explain: department_trend",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/explain/department_trend?department=Engineering&from=2026-07-01&to=2026-07-10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "explain", "department_trend"],
+              "query": [
+                {
+                  "key": "department",
+                  "value": "Engineering"
+                },
+                {
+                  "key": "from",
+                  "value": "2026-07-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-07-10"
+                }
+              ]
+            },
+            "description": "Runs executionStats explain proving department_trend uses IXSCAN and 0 COLLSCAN."
+          }
+        }
+      ]
+    }
+  ]
+}

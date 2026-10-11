@@ -395,7 +395,7 @@ def list_attendance(
 
 
 # --------------------------------------------------------------------------- #
-# Remaining Endpoints Placeholders (Part B - To be implemented in Phase 3 & 4)
+# Endpoints: Attendance Punch-Out & Regularization (Part B)
 # --------------------------------------------------------------------------- #
 @app.post("/attendance/punch-out", status_code=status.HTTP_200_OK, summary="Record a punch-out")
 def punch_out(body: PunchOutRequest):
@@ -640,6 +640,9 @@ def round_half_up(val: Optional[float], decimals: int = 2) -> Optional[float]:
     return float(d)
 
 
+# --------------------------------------------------------------------------- #
+# Endpoints: Workforce Analytics Aggregations (Part B: Rules R6 - R9)
+# --------------------------------------------------------------------------- #
 def count_working_days(joined_on_str: str, month_str: str) -> int:
     """
     R7: Count Monday-Friday days in month YYYY-MM.
@@ -1189,6 +1192,9 @@ def department_trend(
     return {"department": department, "items": items}
 
 
+# --------------------------------------------------------------------------- #
+# Endpoints: Admin & Diagnostic Execution Plans (Part C: Index Verification)
+# --------------------------------------------------------------------------- #
 class ExplainEndpointEnum(str, Enum):
     attendance_list = "attendance_list"
     employee_monthly = "employee_monthly"
