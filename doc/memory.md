@@ -3,8 +3,8 @@
 > **PERMANENT OPERATIONAL DIRECTIVE**: This `doc/memory.md` file must be continuously updated at regular intervals across every phase and conversation turn to preserve long-term context, record architectural decisions, log git commits, and prevent AI drift or hallucination.
 
 ## Project: Employee Attendance & Analytics API
-**Current Milestone**: Phase 11 Completed — Full GitHub Repository Published & Synced  
-**Last Updated**: 2026-10-14 11:12:00 IST
+**Current Milestone**: Phase 12 Completed — Submission Order & Selection Alignment Verified & Pushed  
+**Last Updated**: 2026-10-14 11:22:00 IST
 
 ---
 
@@ -239,4 +239,20 @@
   - Default branch `main` pushed and tracking `origin/main`.
 - **Security Check**:
   - Verified no `.env` or sensitive credentials pushed; strictly `.gitignore` protected.
+
+---
+
+### Phase 12: GitHub Submission Order & Selection Alignment (Done)
+- Aligned `README.md` to follow the exact order and criteria of `candidate_kit/PROBLEM_STATEMENT.docx`:
+  1. Section 12 Submission Checklist with verified checkboxes.
+  2. Section 11 Evaluation Criteria & Deliverables Mapping table (10% Part A, 30% CRUD, 30% Analytics, 15% MongoDB Speed, 15% Decisions).
+  3. Section 4 Environment Contract & Quickstart (`uvicorn app.main:app --port 8000`, Atlas config, seed).
+  4. Section 7 Complete 12-endpoint directory table in exact sequence.
+  5. Section 6 Business Rules (R1–R10) enforcement architecture matrix.
+  6. Section 9 Concurrency & race condition defenses (atomic updates, compound unique indexes, optimistic locking).
+  7. Section 10 Startup indexes & explain proof table (`IXSCAN`, 0 `COLLSCAN`).
+  8. Section 2 Deliverables and complete repository directory tree.
+  9. Architectural decisions summary (`DECISIONS.md`).
+- Committed and pushed to GitHub `origin/main`.
+
 
