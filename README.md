@@ -195,13 +195,8 @@ employee-attendance-analytics-api/
 │
 ├── doc/                      # Project engineering documentation & Postman suite
 │   ├── postman_collection.json # Ready-to-import Postman Collection v2.1.0 (all 12 endpoints)
-│   ├── PROJECT_CONTEXT.md    # Master context and zero-hallucination baseline
-│   ├── PRD.md                # Product Requirements Document
 │   ├── architecture.md       # System architecture and indexing blueprint
-│   ├── rules.md              # Business rules specification bible (R1–R10)
-│   ├── phases.md             # Phased implementation and verification roadmap
-│   ├── design.md             # Pydantic schemas and API payload contracts
-│   └── memory.md             # Ongoing technical memory and commit history log
+│   └── phases.md             # Phased implementation and verification roadmap
 │
 ├── REVIEW.md                 # Part A Deliverable (10%): Catalog of 12 starter defects & fixes
 ├── DECISIONS.md              # Part C Deliverable (15%): Architectural answers to 5 core questions

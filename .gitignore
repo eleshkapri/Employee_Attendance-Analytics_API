@@ -43,3 +43,11 @@ scratch/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal Documentation (retain architecture, phases, and postman collection)
+doc/*
+!doc/architecture.md
+!doc/phases.md
+!doc/postman_collection.json
+
+
