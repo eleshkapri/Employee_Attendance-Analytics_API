@@ -218,3 +218,10 @@
   - Removed all temporary folders and files: `.postman/`, `scratch/`, and `__pycache__`.
   - Maintained master source of truth and planning files in [`doc/`](file:///d:/HRone%20assigment/doc).
   - Clean working tree confirmed via `git status`.
+
+---
+
+### Phase 10: Repository File Directory & Documentation Polish (Done)
+- Expanded [`README.md`](file:///d:/HRone%20assigment/README.md) with Section 6: comprehensive repository file map explaining the purpose of every file and directory.
+- Documented the exact purpose of `app/__init__.py`: marks `app` as an importable Python package for `uvicorn app.main:app` and explains why standard Python conventions keep it intentionally empty.
+- Clean working tree maintained.
