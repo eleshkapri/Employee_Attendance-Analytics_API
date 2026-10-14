@@ -35,6 +35,7 @@ wheels/
 htmlcov/
 .idea/
 .vscode/
+.postman/
 *.swp
 *.swo
 scratch/
