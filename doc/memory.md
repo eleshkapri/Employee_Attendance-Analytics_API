@@ -186,4 +186,23 @@
 - Generated ready-to-import Postman Collection v2.1.0 at [`doc/postman_collection.json`](file:///d:/HRone%20assigment/doc/postman_collection.json) covering all 12 API routes.
 - Enhanced inline docstrings, architectural commentary, and clear section dividers throughout `app/main.py`.
 - Re-verified complete test suite with 100% pass rate.
-- **Deliverables**: Single application file `app/main.py`, `REVIEW.md`, `DECISIONS.md`, `README.md`, `requirements.txt`, clean `.gitignore`.
+- Deliverables: Single application file `app/main.py`, `REVIEW.md`, `DECISIONS.md`, `README.md`, `requirements.txt`, clean `.gitignore`, `doc/postman_collection.json`.
+
+---
+
+### Phase 8: Final Submission Readiness & Grader Simulation Verification (Done)
+- Verification against `PROBLEM_STATEMENT.docx` & `PROJECT_CONTEXT.md`:
+  - Mathematical correctness test suite (`scratch/test_grader_simulation.py`):
+    - R1 Millisecond truncation and overnight shift day anchoring.
+    - R2 Grace period boundary tests: exactly 10m00s (0 late min) vs 10m01s (10 late min floor).
+    - R3 Overtime boundary tests: exactly 29m59s (0 min) vs 30m00s (30 min).
+    - R4 Decimal half-up work hours rounding (strictly avoiding Banker's rounding).
+    - R5 Half-day flag (< 4.50 hrs) and 0.5-day contribution to presence.
+    - R7 Dynamic Mon–Fri working days starting from `joined_on` for mid-month joiners.
+    - R8 Standard half-up precision rounding for rates and percentages.
+  - Comprehensive Input Validation Test Suite (`scratch/test_input_validation.py`):
+    - Tested all negative validation cases (bad employee code, bad email, equal shift times, bad timestamps, invalid dates, invalid enum statuses, date range inversions, range > 92 days).
+    - Verified all invalid inputs return HTTP 422 Unprocessable Entity (zero 500 errors).
+  - Cleanliness Check:
+    - Zero `.env` files or secrets committed (`.gitignore` protects secrets, `.postman/`, and `scratch/`).
+    - Repository tree clean and ready for submission.
