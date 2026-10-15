@@ -106,7 +106,7 @@ app.add_middleware(
 )
 
 
-@app.get("/", include_in_schema=False)
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def root():
     """Redirect root path to interactive Swagger documentation."""
     return RedirectResponse(url="/docs")
