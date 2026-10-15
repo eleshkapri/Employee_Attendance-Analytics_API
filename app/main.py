@@ -4,10 +4,12 @@ Employee Attendance & Analytics API
 Run:
     uvicorn app.main:app --port 8000
 """
+import asyncio
 import json
 import math
 import os
 import re
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -51,10 +53,28 @@ def create_indexes():
         print(f"Warning: Index creation encounter: {e}")
 
 
+async def self_ping_worker():
+    """Keep-alive worker: runs only on Render cloud to prevent free tier spin-down."""
+    url = os.getenv("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+    await asyncio.sleep(60)
+    while True:
+        try:
+            req = urllib.request.Request(f"{url}/health", headers={"User-Agent": "RenderKeepAlive/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as _:
+                pass
+        except Exception:
+            pass
+        await asyncio.sleep(600)  # Ping every 10 minutes
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create indexes idempotently
     create_indexes()
+    # Start keep-alive worker in background (runs only when RENDER_EXTERNAL_URL is set on Render)
+    asyncio.create_task(self_ping_worker())
     yield
 
 
@@ -253,7 +273,7 @@ class RegularizeRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 # Endpoints: System & Employees
 # --------------------------------------------------------------------------- #
-@app.get("/health", summary="Readiness probe")
+@app.api_route("/health", methods=["GET", "HEAD"], summary="Readiness probe")
 def health():
     """Returns 200 only if MongoDB answers a ping, otherwise 503."""
     try:
