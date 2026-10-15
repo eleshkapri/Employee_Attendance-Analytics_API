@@ -1,10 +1,8 @@
 """
-Employee Attendance & Analytics API - Production Implementation
-Contract Version: 2.0.0
-Evaluation: HROne Software Engineer Hiring Assignment
+Employee Attendance & Analytics API
 
-Run: uvicorn app.main:app --port 8000
-Env: MONGO_URI, MONGO_DB (real environment variables take priority over local .env)
+Run:
+    uvicorn app.main:app --port 8000
 """
 import json
 import math
