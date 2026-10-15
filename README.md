@@ -5,6 +5,20 @@ FastAPI and MongoDB service for employee attendance tracking, manual regularizat
 - **Live Service**: [https://employee-attendance-analytics-api-hap6.onrender.com](https://employee-attendance-analytics-api-hap6.onrender.com)
 - **Interactive Swagger Docs**: [https://employee-attendance-analytics-api-hap6.onrender.com/docs](https://employee-attendance-analytics-api-hap6.onrender.com/docs)
 
+### Where Your Data Lives (Live API & Data Endpoints)
+
+Click any of these live links in your browser to see and inspect your actual MongoDB Atlas data directly:
+
+| Resource | Live Endpoint | Description |
+|---|---|---|
+| **Interactive Docs** | [`/docs`](https://employee-attendance-analytics-api-hap6.onrender.com/docs) | Swagger UI to test all 12 endpoints interactively in your browser |
+| **System Health** | [`/health`](https://employee-attendance-analytics-api-hap6.onrender.com/health) | Live database connection probe (`{"status": "ok"}`) |
+| **All Employees** | [`/employees`](https://employee-attendance-analytics-api-hap6.onrender.com/employees) | Returns the list of employees in JSON |
+| **Attendance Logs** | [`/attendance`](https://employee-attendance-analytics-api-hap6.onrender.com/attendance) | Returns attendance records with punch times and derived metrics |
+| **Department Summary** | [`/analytics/departments/summary?month=2026-03`](https://employee-attendance-analytics-api-hap6.onrender.com/analytics/departments/summary?month=2026-03) | Live department monthly analytics (Engineering, Sales, Support) |
+| **Late Leaderboard** | [`/analytics/leaderboard/late?month=2026-03`](https://employee-attendance-analytics-api-hap6.onrender.com/analytics/leaderboard/late?month=2026-03) | Live competition ranking leaderboard |
+| **Alternative Docs** | [`/redoc`](https://employee-attendance-analytics-api-hap6.onrender.com/redoc) | Clean ReDoc API reference |
+
 ---
 
 ## How to Run
