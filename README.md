@@ -2,6 +2,9 @@
 
 FastAPI and MongoDB service for employee attendance tracking, manual regularization, and workforce analytics with full business rule enforcement (R1–R10) and indexed aggregation pipelines.
 
+- **Live Service**: [https://employee-attendance-analytics-api-hap6.onrender.com](https://employee-attendance-analytics-api-hap6.onrender.com)
+- **Interactive Swagger Docs**: [https://employee-attendance-analytics-api-hap6.onrender.com/docs](https://employee-attendance-analytics-api-hap6.onrender.com/docs)
+
 ---
 
 ## How to Run
