@@ -87,6 +87,7 @@ uvicorn app.main:app --port 8000 --reload
   - Regularization uses optimistic checks to prevent lost updates to the audit trail.
 - **Precision Rounding**: All decimal calculations (work hours, percentages, moving averages) utilize `decimal.Decimal` with explicit `ROUND_HALF_UP` policy to prevent Python Banker's rounding discrepancies.
 - **Query Optimization**: Every query and aggregation pipeline is backed by indexes. Verified through `GET /admin/explain/{endpoint}` showing index scans (`IXSCAN`) and zero collection scans (`COLLSCAN`).
+- **Health Probing & Cloud Keep-Alive**: The `/health` endpoint accepts both `GET` and `HEAD` requests to ensure compatibility with uptime monitors (e.g. UptimeRobot). Additionally, a background task automatically pings the service every 10 minutes when deployed on cloud hosts (such as Render) using `RENDER_EXTERNAL_URL` to prevent idle container spin-down.
 
 ---
 

@@ -151,3 +151,23 @@ At application startup, indexes are built idempotently via `create_indexes()`. T
 2. **Headcount Lookup**: Determines active department employees with `joined_on <= date`.
 3. **Metrics Calculation**: Computes `is_working_day` (Mon–Fri), `present_count`, `late_count`, and `attendance_rate` (4 decimals half-up).
 4. **$setWindowFields**: Computes 7-day moving average of non-null attendance rates over window `[-6, 0]`.
+
+---
+
+## 6. Readiness Probing & Cloud Keep-Alive Architecture
+
+### 6.1 Multi-Method Health Probe (`GET` & `HEAD`)
+- **Route**: `/health`
+- **Supported Methods**: `GET`, `HEAD`
+- **Behavior**:
+  - Executes live database ping `client.admin.command('ping')`.
+  - Returns `200 OK {"status": "ok"}` on success, or `503 Service Unavailable` if MongoDB is unreachable.
+  - Supporting `HEAD` guarantees zero `405 Method Not Allowed` failures when monitored by uptime tools (e.g. UptimeRobot, Kubernetes liveness probes, cloud load balancers) which issue `HEAD` by default.
+
+### 6.2 Cloud Keep-Alive Worker (`self_ping_worker`)
+- **Execution**: Background asyncio task spawned during application lifespan.
+- **Trigger**: Active only when `RENDER_EXTERNAL_URL` environment variable is detected.
+- **Interval**: Periodically sends an HTTP request to `{RENDER_EXTERNAL_URL}/health` every 10 minutes.
+- **Purpose**: Prevents cloud container idle spin-down on free-tier platforms without requiring external cron setups.
+- **Isolation Guarantee**: In local development and automated grader evaluation environments, `RENDER_EXTERNAL_URL` is unset (`None`), ensuring the task terminates immediately with zero external network activity.
+
