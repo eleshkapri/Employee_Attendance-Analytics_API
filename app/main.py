@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 from bson import json_util
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 import pymongo
 from pymongo import MongoClient
@@ -92,6 +93,15 @@ app = FastAPI(
     title="Employee Attendance & Analytics API",
     version="2.0.0",
     lifespan=lifespan
+)
+
+# Enable Cross-Origin Resource Sharing (CORS) for secure web and client access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
